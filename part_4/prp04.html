@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Planar Reflector - Part 4</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin:0;
+      min-height:100vh;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      background:#0d0f14;
+      color:#e8ecf0;
+      font-family:system-ui, sans-serif;
+    }
+    header {
+      padding:12px 5vw;
+      display:flex;
+      flex-wrap:wrap;
+      gap:12px;
+      align-items:center;
+    }
+    #wrap {
+      flex:1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+    }
+    canvas {
+      width:960px;
+      height:540px;
+      background:#000;
+      border-radius:10px;
+      box-shadow:0 0 16px rgba(0,0,0,0.6);
+    }
+    button {
+      padding:8px 14px;
+      border:1px solid #334;
+      background:#161a24;
+      color:#e8ecf0;
+      border-radius:6px;
+      cursor:pointer;
+    }
+    button:hover { background:#1f2433; }
+  </style>
+</head>
+<body>
+  <header>
+    <button id="btnBounce">Disable bounce</button>
+    <button id="btnLight">Disable light orbit</button>
+    <button id="btnShadowView">Show depth map</button>
+  </header>
+  <div id="wrap"><canvas id="c" width="960" height="540"></canvas></div>
+  <script src="../OBJParser.js"></script>
+  <script type="module" src="./prp04.js"></script>
+</body>
+</html>
