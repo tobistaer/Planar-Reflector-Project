@@ -322,7 +322,7 @@ const groundPipeline = await device.createRenderPipelineAsync({
   primitive:{ topology:'triangle-list', cullMode:'back' },
   depthStencil:{
     format: depthFormat,
-    depthWriteEnabled:false,
+    depthWriteEnabled:true,
     depthCompare:'less-equal',
     stencilFront: stencilKeep,
     stencilBack:  stencilKeep,
