@@ -529,7 +529,7 @@ function resizeIfNeeded(){
 
 function computeBounce(dt){
   if (bounceEnabled) bouncePhase += dt * 2.0;
-  const minY = -2.3, maxY = 0.0;
+  const minY = -1.8, maxY = 0.0;
   const t = 0.5 * (Math.sin(bouncePhase) + 1);
   return minY + (maxY - minY) * t;
 }
