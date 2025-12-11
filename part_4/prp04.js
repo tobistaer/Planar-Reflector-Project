@@ -10,6 +10,7 @@ const ctx     = canvas.getContext('webgpu');
 const format  = navigator.gpu.getPreferredCanvasFormat();
 ctx.configure({ device, format, alphaMode: 'opaque' });
 
+// Oblique near-plane clipping on the reflected pass; still uses stencil to bound reflection to ground.
 const depthFormat = 'depth24plus-stencil8';
 const shadowMapSize = 1024;
 const shadowBias = 0.003;
@@ -571,6 +572,7 @@ function frame(ts){
   let reflectedViewProj;
   let planeEye = null;
   if (useObliqueClip) {
+    // Move near plane onto the reflector to avoid drawing behind it.
     planeEye = planeInEyeSpace(viewReflected);
     const obliqueProj = modifyProjectionMatrix(planeEye, proj);
     reflectedViewProj = mat4Mul(obliqueProj, viewReflected);
@@ -658,6 +660,7 @@ function frame(ts){
     }
   });
 
+  // Stencil pass: mark ground region, draw reflected teapot with oblique near-plane clipping.
   pass1.setPipeline(groundMaskPipeline);
   pass1.setBindGroup(0, groundBindGroup);
   pass1.setVertexBuffer(0, groundPosBuf);
@@ -691,6 +694,7 @@ function frame(ts){
     }
   });
 
+  // Final scene pass: blended ground then original teapot.
   pass2.setPipeline(groundPipeline);
   pass2.setBindGroup(0, groundBindGroup);
   pass2.setVertexBuffer(0, groundPosBuf);

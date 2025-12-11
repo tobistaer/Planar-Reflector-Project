@@ -9,6 +9,7 @@ const device  = await adapter.requestDevice();
 const ctx     = canvas.getContext('webgpu');
 const format  = navigator.gpu.getPreferredCanvasFormat();
 ctx.configure({ device, format, alphaMode: 'opaque' });
+// Adds transparency on the ground to blend the reflected teapot with the surface.
 const shadowMapSize = 1024;
 const shadowBias = 0.003;
 const reflectionPlaneY = -1.0;
@@ -511,6 +512,7 @@ function frame(ts){
   pass.setIndexBuffer(teapotIdxBuf, 'uint32');
   pass.drawIndexed(teapotInfo.indices.length);
 
+  // Transparent ground blends the reflection with the surface color.
   pass.setPipeline(groundPipeline);
   pass.setBindGroup(0, groundBindGroup);
   pass.setVertexBuffer(0, groundPosBuf);

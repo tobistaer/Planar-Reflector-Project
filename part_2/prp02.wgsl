@@ -56,6 +56,7 @@ fn fsGround(in : GroundVSOut) -> @location(0) vec4<f32> {
     return vec4<f32>(vec3<f32>(depthView), 1.0);
   }
 
+  // Ground uses fixed alpha; reflection is visible through this blended surface.
   let baseColor = textureSample(baseTex, baseSampler, in.uv).rgb;
   let lightDir = normalize(uBO.lightPosition.xyz - in.worldPos);
   let viewDir = normalize(uBO.eyePosition.xyz - in.worldPos);

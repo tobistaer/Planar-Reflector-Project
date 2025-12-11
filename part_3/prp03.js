@@ -10,6 +10,7 @@ const ctx     = canvas.getContext('webgpu');
 const format  = navigator.gpu.getPreferredCanvasFormat();
 ctx.configure({ device, format, alphaMode: 'opaque' });
 
+// Uses stencil to clip the reflected teapot to the ground quad.
 const depthFormat = 'depth24plus-stencil8';
 const shadowMapSize = 1024;
 const shadowBias = 0.003;
@@ -568,6 +569,7 @@ function frame(ts){
     }
   });
 
+  // 1) Write stencil where the ground is visible.
   pass.setPipeline(groundMaskPipeline);
   pass.setBindGroup(0, groundBindGroup);
   pass.setVertexBuffer(0, groundPosBuf);
@@ -576,6 +578,7 @@ function frame(ts){
   pass.setStencilReference(1);
   pass.draw(groundVertexCount);
 
+  // 2) Draw reflected teapot only where stencil==1.
   pass.setPipeline(reflectedTeapotPipeline);
   pass.setBindGroup(0, reflectedTeapotBindGroup);
   pass.setVertexBuffer(0, teapotPosBuf);
@@ -584,6 +587,7 @@ function frame(ts){
   pass.setStencilReference(1);
   pass.drawIndexed(teapotInfo.indices.length);
 
+  // 3) Draw ground (blended) and original teapot normally.
   pass.setPipeline(groundPipeline);
   pass.setBindGroup(0, groundBindGroup);
   pass.setVertexBuffer(0, groundPosBuf);

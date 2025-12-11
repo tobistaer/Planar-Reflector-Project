@@ -25,6 +25,7 @@ struct GroundVSOut {
 fn vsGround(@location(0) pos : vec3<f32>,
             @location(1) uv  : vec2<f32>,
             @location(2) nrm : vec3<f32>) -> GroundVSOut {
+  // Ground is also drawn as a stencil mask; color writes can be discarded in that pass.
   var out : GroundVSOut;
   let world = uBO.model * vec4<f32>(pos, 1.0);
   out.clip = uBO.viewProj * world;

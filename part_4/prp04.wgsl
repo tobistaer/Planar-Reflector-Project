@@ -25,6 +25,7 @@ struct GroundVSOut {
 fn vsGround(@location(0) pos : vec3<f32>,
             @location(1) uv  : vec2<f32>,
             @location(2) nrm : vec3<f32>) -> GroundVSOut {
+  // Shared between color and stencil-only ground passes.
   var out : GroundVSOut;
   let world = uBO.model * vec4<f32>(pos, 1.0);
   out.clip = uBO.viewProj * world;
@@ -91,6 +92,7 @@ fn vsTeapot(@location(0) pos    : vec4<f32>,
 
 @fragment
 fn fsTeapot(in : TeapotVSOut) -> @location(0) vec4<f32> {
+  // Same shading for real and reflected teapot; reflect logic handled in JS via matrices.
   let baseColor = vec3<f32>(0.82, 0.82, 0.82);
   let lightDir = normalize(uBO.lightPosition.xyz - in.worldPos);
   let viewDir = normalize(uBO.eyePosition.xyz - in.worldPos);

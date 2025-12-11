@@ -10,6 +10,8 @@ const device  = await adapter.requestDevice();
 const ctx     = canvas.getContext('webgpu');
 const format  = navigator.gpu.getPreferredCanvasFormat();
 ctx.configure({ device, format, alphaMode:'opaque' });
+// Simple single-pass reflection without clipping; uses shadow map from worksheet 9 base.
+// Pipelines are duplicated for original and reflected teapot; only face winding differs.
 const shadowMapSize = 1024;
 const shadowBias = 0.003;
 const reflectionPlaneY = -1.0;

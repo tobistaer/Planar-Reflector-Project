@@ -26,6 +26,7 @@ struct GroundVSOut {
 fn vsGround(@location(0) pos : vec3<f32>,
             @location(1) uv  : vec2<f32>,
             @location(2) nrm : vec3<f32>) -> GroundVSOut {
+  // Ground is only used as a lit reference surface; reflection is a separate draw call in JS.
   var out : GroundVSOut;
   let world = uBO.model * vec4<f32>(pos, 1.0);
   out.clip = uBO.viewProj * world;
@@ -88,6 +89,7 @@ fn vsTeapot(@location(0) pos    : vec4<f32>,
 
 @fragment
 fn fsTeapot(in : TeapotVSOut) -> @location(0) vec4<f32> {
+  // Standard Blinn-Phong lit teapot; color reused for both original and reflected draws.
   let baseColor = vec3<f32>(0.82, 0.82, 0.82);
   let lightDir = normalize(uBO.lightPosition.xyz - in.worldPos);
   let viewDir = normalize(uBO.eyePosition.xyz - in.worldPos);
