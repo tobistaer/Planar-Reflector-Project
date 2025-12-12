@@ -641,10 +641,7 @@ function frame(ts){
   // Reflect the LIGHT for the reflected teapot
   const reflectedLightVec = new Float32Array([...reflectPointY(lightPos), 1]);
 
-  if (useObliqueClip && planeEye && !debugOnce) {
-    console.log('Oblique planeEye (a,b,c,d):', Array.from(planeEye));
-    debugOnce = true;
-  }
+  if (useObliqueClip && planeEye && !debugOnce) debugOnce = true;
 
   // Debug view in shader (same as earlier parts)
   shadowParams[2] = debugShadowView ? 1 : 0;
