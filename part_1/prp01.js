@@ -1,4 +1,3 @@
-
 const canvas = document.getElementById('c');
 const btnBounce = document.getElementById('btnBounce');
 const btnLight  = document.getElementById('btnLight');

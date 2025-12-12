@@ -1,11 +1,4 @@
-// prp04.js — Planar Reflector (Part 4) with oblique near-plane clipping (WebGPU)
-// Fixes: reflection should NOT be mirrored left/right (handle stays correct).
-//
-// Requirements (same as your setup):
-// - ../OBJParser.js provides readOBJFile(...)
-// - ./prp04.wgsl in same folder
-// - ../models/teapot.obj exists
-// - ../xamp23.png exists
+// Planar Reflector (Part 4, WebGPU): stencil-bounded reflection + oblique near-plane clipping.
 
 const canvas = document.getElementById('c');
 const btnBounce = document.getElementById('btnBounce');
@@ -216,7 +209,7 @@ const groundNormalMatrix = I4();
 const reflectionMatrix = reflectionY(reflectionPlaneY);
 const reflectPointY = (p) => transformPoint(reflectionMatrix, p);
 
-// Significantly larger ground so reflections stay visible
+// Ground (reflector) dimensions
 const groundWidth = 8;
 const groundDepth = 8;
 const groundNearZ = 0.0;
@@ -525,8 +518,6 @@ updateViewProj();
 let bounceEnabled     = true;
 let lightOrbitEnabled = true;
 let debugShadowView   = false;
-let useObliqueClip    = true;
-let debugOnce         = false;
 let bouncePhase       = 0;
 let lightAngle        = 0;
 let lastTime          = 0;
@@ -542,13 +533,6 @@ btnLight.addEventListener('click', () => {
 btnShadowView.addEventListener('click', () => {
   debugShadowView = !debugShadowView;
   btnShadowView.textContent = debugShadowView ? 'Show shaded scene' : 'Show depth map';
-});
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'o' || e.key === 'O') {
-    useObliqueClip = !useObliqueClip;
-    console.log('Oblique clipping:', useObliqueClip);
-    debugOnce = false;
-  }
 });
 
 function updateButtons(){
@@ -623,16 +607,9 @@ function frame(ts){
   // Keep the SAME camera view (prevents left/right flip)
   const viewReflected = view;
 
-  let reflectedViewProj;
-  let planeEye = null;
-
-  if (useObliqueClip) {
-    planeEye = planeInEyeSpace(viewReflected);
-    const obliqueProj = modifyProjectionMatrix(planeEye, proj);
-    reflectedViewProj = mat4Mul(obliqueProj, viewReflected);
-  } else {
-    reflectedViewProj = mat4Mul(proj, viewReflected);
-  }
+  const planeEye = planeInEyeSpace(viewReflected);
+  const obliqueProj = modifyProjectionMatrix(planeEye, proj);
+  const reflectedViewProj = mat4Mul(obliqueProj, viewReflected);
 
   // Reflect the MODEL (mirrored teapot)
   const reflectedModel = mat4Mul(reflectionMatrix, teapotModel);
@@ -641,7 +618,7 @@ function frame(ts){
   // Reflect the LIGHT for the reflected teapot
   const reflectedLightVec = new Float32Array([...reflectPointY(lightPos), 1]);
 
-  if (useObliqueClip && planeEye && !debugOnce) debugOnce = true;
+  // Oblique near-plane clipping is always enabled in Part 4.
 
   // Debug view in shader (same as earlier parts)
   shadowParams[2] = debugShadowView ? 1 : 0;

@@ -512,7 +512,6 @@ function frame(ts){
   pass.setIndexBuffer(teapotIdxBuf, 'uint32');
   pass.drawIndexed(teapotInfo.indices.length);
 
-  // Transparent ground blends the reflection with the surface color.
   pass.setPipeline(groundPipeline);
   pass.setBindGroup(0, groundBindGroup);
   pass.setVertexBuffer(0, groundPosBuf);
