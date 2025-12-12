@@ -362,7 +362,7 @@ function frame(ts){
     colorAttachments:[{
       view: colorView,
       loadOp:'clear', storeOp:'store',
-      clearValue:{ r:0.1, g:0.12, b:0.16, a:1 },
+      clearValue:{ r:0.62, g:0.82, b:0.98, a:1 },
     }],
     depthStencilAttachment:{
       view: depthTex.createView(),
