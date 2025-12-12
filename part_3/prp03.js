@@ -15,6 +15,8 @@ const shadowMapSize = 1024;
 const shadowBias = 0.003;
 const reflectionPlaneY = -1.0;
 
+// Part 3: use stencil to clip the reflection to the ground quad.
+
 const I4 = () => { const m = new Float32Array(16); m[0]=m[5]=m[10]=m[15]=1; return m; };
 function mat4Mul(a,b){
   const o = new Float32Array(16);
@@ -528,6 +530,7 @@ function frame(ts){
 
   const encoder = device.createCommandEncoder();
 
+  // Shadow-map pass.
   const shadowPass = encoder.beginRenderPass({
     colorAttachments:[{
       view: shadowMapRenderView,
@@ -568,6 +571,7 @@ function frame(ts){
     }
   });
 
+  // 1) Write stencil where the ground is, 2) draw reflected teapot where stencil==1.
   pass.setPipeline(groundMaskPipeline);
   pass.setBindGroup(0, groundBindGroup);
   pass.setVertexBuffer(0, groundPosBuf);
@@ -584,6 +588,7 @@ function frame(ts){
   pass.setStencilReference(1);
   pass.drawIndexed(teapotInfo.indices.length);
 
+  // Then draw ground + normal teapot.
   pass.setPipeline(groundPipeline);
   pass.setBindGroup(0, groundBindGroup);
   pass.setVertexBuffer(0, groundPosBuf);

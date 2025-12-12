@@ -13,6 +13,8 @@ const shadowMapSize = 1024;
 const shadowBias = 0.003;
 const reflectionPlaneY = -1.0;
 
+// Part 2: blend the reflector (ground) over the reflected teapot.
+
 const I4 = () => { const m = new Float32Array(16); m[0]=m[5]=m[10]=m[15]=1; return m; };
 function mat4Mul(a,b){
   const o = new Float32Array(16);
@@ -467,6 +469,7 @@ function frame(ts){
 
   const encoder = device.createCommandEncoder();
 
+  // Shadow-map pass.
   const shadowPass = encoder.beginRenderPass({
     colorAttachments:[{
       view: shadowMapRenderView,
@@ -504,6 +507,7 @@ function frame(ts){
     }
   });
 
+  // Draw reflected teapot first, then blend ground, then draw normal teapot.
   pass.setPipeline(reflectedTeapotPipeline);
   pass.setBindGroup(0, reflectedTeapotBindGroup);
   pass.setVertexBuffer(0, teapotPosBuf);

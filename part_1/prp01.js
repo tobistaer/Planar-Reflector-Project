@@ -13,6 +13,8 @@ const shadowMapSize = 1024;
 const shadowBias = 0.003;
 const reflectionPlaneY = -1.0;
 
+// Part 1: draw teapot + mirrored teapot (no ground yet).
+
 const I4 = () => { const m=new Float32Array(16); m[0]=m[5]=m[10]=m[15]=1; return m; };
 function mat4Mul(a,b){ const o=new Float32Array(16); for(let r=0;r<4;r++) for(let c=0;c<4;c++) o[c*4+r]=a[0*4+r]*b[c*4+0]+a[1*4+r]*b[c*4+1]+a[2*4+r]*b[c*4+2]+a[3*4+r]*b[c*4+3]; return o; }
 function T(x,y,z){ const m=I4(); m[12]=x; m[13]=y; m[14]=z; return m; }
@@ -336,6 +338,7 @@ function frame(ts){
 
   const encoder = device.createCommandEncoder();
 
+  // Shadow-map pass (render teapot depth from light view).
   const shadowPass = encoder.beginRenderPass({
     colorAttachments:[{
       view: shadowMapRenderView,
@@ -367,6 +370,7 @@ function frame(ts){
     }
   });
 
+  // Draw normal teapot, then reflected teapot (reflection transform).
   pass.setPipeline(teapotPipeline);
   pass.setBindGroup(0, teapotBindGroup);
   pass.setVertexBuffer(0, teapotPosBuf);

@@ -15,6 +15,8 @@ const shadowMapSize = 1024;
 const shadowBias = 0.003;
 const reflectionPlaneY = -1.0;
 
+// Part 4: clip submerged reflection using oblique near-plane clipping (reflector plane as the near plane).
+
 const I4 = () => { const m = new Float32Array(16); m[0]=m[5]=m[10]=m[15]=1; return m; };
 
 function mat4Mul(a,b){
@@ -563,6 +565,7 @@ function frame(ts){
 
   const viewReflected = view;
 
+  // Compute reflector plane in eye space and modify the projection so the near plane matches it.
   const planeEye = planeInEyeSpace(viewReflected);
   const obliqueProj = modifyProjectionMatrix(planeEye, proj);
   const reflectedViewProj = mat4Mul(obliqueProj, viewReflected);
@@ -603,6 +606,7 @@ function frame(ts){
 
   const encoder = device.createCommandEncoder();
 
+  // Shadow-map pass.
   const shadowPass = encoder.beginRenderPass({
     colorAttachments:[{
       view: shadowMapRenderView,
@@ -662,6 +666,7 @@ function frame(ts){
 
   pass1.end();
 
+  // Clear depth before drawing the normal (non-oblique) scene pass.
   const pass2 = encoder.beginRenderPass({
     colorAttachments:[{
       view: colorView,
