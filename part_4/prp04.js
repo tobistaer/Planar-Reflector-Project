@@ -1,3 +1,12 @@
+// prp04.js — Planar Reflector (Part 4) with oblique near-plane clipping (WebGPU)
+// Fixes: reflection should NOT be mirrored left/right (handle stays correct).
+//
+// Requirements (same as your setup):
+// - ../OBJParser.js provides readOBJFile(...)
+// - ./prp04.wgsl in same folder
+// - ../models/teapot.obj exists
+// - ../xamp23.png exists
+
 const canvas = document.getElementById('c');
 const btnBounce = document.getElementById('btnBounce');
 const btnLight  = document.getElementById('btnLight');
@@ -10,47 +19,64 @@ const ctx     = canvas.getContext('webgpu');
 const format  = navigator.gpu.getPreferredCanvasFormat();
 ctx.configure({ device, format, alphaMode: 'opaque' });
 
-// Oblique near-plane clipping on the reflected pass; still uses stencil to bound reflection to ground.
+// Uses stencil to bound reflection to ground + oblique clip plane to cut reflected teapot at the reflector plane.
 const depthFormat = 'depth24plus-stencil8';
 const shadowMapSize = 1024;
 const shadowBias = 0.003;
 const reflectionPlaneY = -1.0;
 
+// ------------------------
+// Math helpers (column-major matrices)
+// ------------------------
 const I4 = () => { const m = new Float32Array(16); m[0]=m[5]=m[10]=m[15]=1; return m; };
+
 function mat4Mul(a,b){
+  // column-major: out = a * b
   const o = new Float32Array(16);
   for (let r=0;r<4;r++) for (let c=0;c<4;c++)
-    o[c*4+r] = a[0*4+r]*b[c*4+0] + a[1*4+r]*b[c*4+1] +
-               a[2*4+r]*b[c*4+2] + a[3*4+r]*b[c*4+3];
+    o[c*4+r] =
+      a[0*4+r]*b[c*4+0] +
+      a[1*4+r]*b[c*4+1] +
+      a[2*4+r]*b[c*4+2] +
+      a[3*4+r]*b[c*4+3];
   return o;
 }
 function T(x,y,z){ const m=I4(); m[12]=x; m[13]=y; m[14]=z; return m; }
 function S(x,y,z){ const m=I4(); m[0]=x; m[5]=y; m[10]=z; return m; }
+
+// Reflect across plane y = yPlane
 function reflectionY(yPlane){
   const m = I4();
-  m[5] = -1;
+  m[5]  = -1;
   m[13] = 2*yPlane;
   return m;
 }
+
+// WebGPU/D3D-style perspective (NDC z in [0..1])
 function perspectiveFovY(fovy, aspect, near, far){
   const f = 1/Math.tan(fovy/2);
   const nf = 1/(near - far);
   const m = new Float32Array(16);
-  m[0] = f/aspect;
-  m[5] = f;
+  m[0]  = f/aspect;
+  m[5]  = f;
   m[10] = far * nf;
   m[11] = -1;
   m[14] = far * near * nf;
   m[15] = 0;
   return m;
 }
+
 function lookAt(e,c,u){
-  const[ex,ey,ez]=e,[cx,cy,cz]=c,[ux,uy,uz]=u;
+  const [ex,ey,ez]=e, [cx,cy,cz]=c, [ux,uy,uz]=u;
+
   let zx=ex-cx, zy=ey-cy, zz=ez-cz;
   { const l=1/Math.hypot(zx,zy,zz); zx*=l; zy*=l; zz*=l; }
+
   let xx=uy*zz-uz*zy, xy=uz*zx-ux*zz, xz=ux*zy-uy*zx;
   { const l=1/Math.hypot(xx,xy,xz); xx*=l; xy*=l; xz*=l; }
+
   const yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+
   const m=I4();
   m[0]=xx; m[4]=xy; m[8]=xz;
   m[1]=yx; m[5]=yy; m[9]=yz;
@@ -60,14 +86,17 @@ function lookAt(e,c,u){
   m[14]=-(zx*ex+zy*ey+zz*ez);
   return m;
 }
+
 function mat4Transpose(m){
   const t=new Float32Array(16);
   for (let r=0;r<4;r++) for (let c=0;c<4;c++) t[c*4+r]=m[r*4+c];
   return t;
 }
+
 function mat4Inverse(a){
   const b=new Float32Array(16); b.set(a);
   const inv=new Float32Array(16);
+
   inv[0] =   b[5]*b[10]*b[15] - b[5]*b[11]*b[14] - b[9]*b[6]*b[15] + b[9]*b[7]*b[14] + b[13]*b[6]*b[11] - b[13]*b[7]*b[10];
   inv[4] =  -b[4]*b[10]*b[15] + b[4]*b[11]*b[14] + b[8]*b[6]*b[15] - b[8]*b[7]*b[14] - b[12]*b[6]*b[11] + b[12]*b[7]*b[10];
   inv[8] =   b[4]*b[9]*b[15]  - b[4]*b[11]*b[13] - b[8]*b[5]*b[15] + b[8]*b[7]*b[13] + b[12]*b[5]*b[11] - b[12]*b[7]*b[9];
@@ -84,11 +113,13 @@ function mat4Inverse(a){
   inv[7] =   b[0]*b[6]*b[11] - b[0]*b[7]*b[10] - b[4]*b[2]*b[11] + b[4]*b[3]*b[10] + b[8]*b[2]*b[7] - b[8]*b[3]*b[6];
   inv[11] = -b[0]*b[5]*b[11] + b[0]*b[7]*b[9]  + b[4]*b[1]*b[11] - b[4]*b[3]*b[9]  - b[8]*b[1]*b[7] + b[8]*b[3]*b[5];
   inv[15] =  b[0]*b[5]*b[10] - b[0]*b[6]*b[9]  - b[4]*b[1]*b[10] + b[4]*b[2]*b[9]  + b[8]*b[1]*b[6] - b[8]*b[2]*b[5];
+
   let det = b[0]*inv[0] + b[1]*inv[4] + b[2]*inv[8] + b[3]*inv[12];
   det = 1/det;
   for(let i=0;i<16;i++) inv[i]*=det;
   return inv;
 }
+
 function transformPoint(m,[x,y,z]){
   const nx = m[0]*x + m[4]*y + m[8]*z  + m[12];
   const ny = m[1]*x + m[5]*y + m[9]*z  + m[13];
@@ -97,38 +128,35 @@ function transformPoint(m,[x,y,z]){
   const invW = nw ? 1/nw : 1;
   return [nx*invW, ny*invW, nz*invW];
 }
+
 function planeInEyeSpace(view){
   const n = [0,1,0];
+
   const nx = view[0]*n[0] + view[4]*n[1] + view[8]*n[2];
   const ny = view[1]*n[0] + view[5]*n[1] + view[9]*n[2];
   const nz = view[2]*n[0] + view[6]*n[1] + view[10]*n[2];
+
   const len = Math.hypot(nx, ny, nz) || 1;
   const normalEye = [ nx/len, ny/len, nz/len ];
+
   const pointEye = transformPoint(view, [0, reflectionPlaneY, 0]);
   let d = -(normalEye[0]*pointEye[0] + normalEye[1]*pointEye[1] + normalEye[2]*pointEye[2]);
+
   let plane = new Float32Array([normalEye[0], normalEye[1], normalEye[2], d]);
   if (plane[3] > 0) plane = new Float32Array([-plane[0], -plane[1], -plane[2], -plane[3]]);
   return plane;
 }
-function multiplyMat4Vec4(m, v){
-  const x = v[0], y = v[1], z = v[2], w = v[3];
-  return new Float32Array([
-    m[0]*x + m[4]*y + m[8]*z  + m[12]*w,
-    m[1]*x + m[5]*y + m[9]*z  + m[13]*w,
-    m[2]*x + m[6]*y + m[10]*z + m[14]*w,
-    m[3]*x + m[7]*y + m[11]*z + m[15]*w,
-  ]);
-}
-function modifyProjectionMatrix(clipPlaneEye, proj) {
 
+function modifyProjectionMatrix(clipPlaneEye, proj) {
   const m = proj.slice();
 
   const signX = clipPlaneEye[0] >= 0 ? 1 : -1;
   const signY = clipPlaneEye[1] >= 0 ? 1 : -1;
-  const qx = (signX + m[2]) / m[0];   
-  const qy = (signY + m[6]) / m[5];   
+
+  const qx = (signX + m[2]) / m[0];
+  const qy = (signY + m[6]) / m[5];
   const qz = 1.0;
-  const qw = (1.0 - m[10]) / m[14];   
+  const qw = (1.0 - m[10]) / m[14];
 
   const dot =
     clipPlaneEye[0] * qx +
@@ -136,32 +164,21 @@ function modifyProjectionMatrix(clipPlaneEye, proj) {
     clipPlaneEye[2] * qz +
     clipPlaneEye[3] * qw;
 
-  if (Math.abs(dot) < 1e-6) {
-    return proj.slice();
-  }
+  if (Math.abs(dot) < 1e-6) return proj.slice();
 
   const scale = 2.0 / dot;
 
-  const cx = clipPlaneEye[0] * scale;
-  const cy = clipPlaneEye[1] * scale;
-  const cz = clipPlaneEye[2] * scale;
-  const cw = clipPlaneEye[3] * scale;
-
-  m[2]  = cx;
-  m[6]  = cy;
-  m[10] = cz;
-  m[14] = cw;
+  m[2]  = clipPlaneEye[0] * scale;
+  m[6]  = clipPlaneEye[1] * scale;
+  m[10] = clipPlaneEye[2] * scale;
+  m[14] = clipPlaneEye[3] * scale;
 
   return m;
 }
 
-const scaleQuarter = S(0.25,0.25,0.25);
-const groundModel = I4();
-const groundNormalMatrix = I4();
-const reflectionMatrix = reflectionY(reflectionPlaneY);
-const reflectPointY = (p) => transformPoint(reflectionMatrix, p);
-const reflectDirY = (v) => [ v[0], -v[1], v[2] ];
-
+// ------------------------
+// GPU helpers
+// ------------------------
 function makeBuffer(data, usage){
   const buffer = device.createBuffer({
     size: ((data.byteLength+3)&~3),
@@ -190,6 +207,14 @@ async function loadTexture(url){
   return texture;
 }
 
+// ------------------------
+// Scene geometry
+// ------------------------
+const scaleQuarter = S(0.25,0.25,0.25);
+const groundModel = I4();
+const groundNormalMatrix = I4();
+const reflectionMatrix = reflectionY(reflectionPlaneY);
+const reflectPointY = (p) => transformPoint(reflectionMatrix, p);
 
 const groundPos = new Float32Array([
   -2,-1,-2,1,
@@ -236,7 +261,9 @@ const teapotPosBuf = makeBuffer(teapotInfo.vertices, GPUBufferUsage.VERTEX|GPUBu
 const teapotNrmBuf = makeBuffer(teapotInfo.normals,  GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST);
 const teapotIdxBuf = makeBuffer(teapotInfo.indices,  GPUBufferUsage.INDEX |GPUBufferUsage.COPY_DST);
 
-
+// ------------------------
+// Shadow map resources
+// ------------------------
 const shadowMapTexture = device.createTexture({
   size:{ width:shadowMapSize, height:shadowMapSize },
   format:'rgba32float',
@@ -252,7 +279,9 @@ const shadowDepthTexture = device.createTexture({
 });
 const shadowDepthView = shadowDepthTexture.createView();
 
-
+// ------------------------
+// Pipelines
+// ------------------------
 const shaderCode = await (await fetch('./prp04.wgsl?v=ref4')).text();
 const shaderModule = device.createShaderModule({ code: shaderCode });
 
@@ -267,8 +296,8 @@ const litLayout = device.createBindGroupLayout({
 });
 
 const stencilReplace = { compare:'always', failOp:'replace', depthFailOp:'replace', passOp:'replace' };
-const stencilKeep =    { compare:'always', failOp:'keep',    depthFailOp:'keep',    passOp:'keep' };
-const stencilEqual =   { compare:'equal',  failOp:'keep',    depthFailOp:'keep',    passOp:'keep' };
+const stencilKeep    = { compare:'always', failOp:'keep',    depthFailOp:'keep',    passOp:'keep' };
+const stencilEqual   = { compare:'equal',  failOp:'keep',    depthFailOp:'keep',    passOp:'keep' };
 
 const groundMaskPipeline = await device.createRenderPipelineAsync({
   layout: device.createPipelineLayout({ bindGroupLayouts:[litLayout] }),
@@ -292,7 +321,7 @@ const groundMaskPipeline = await device.createRenderPipelineAsync({
     depthWriteEnabled:false,
     depthCompare:'always',
     stencilFront: stencilReplace,
-    stencilBack: stencilReplace,
+    stencilBack:  stencilReplace,
     stencilReadMask:0xff,
     stencilWriteMask:0xff,
   },
@@ -359,6 +388,7 @@ const teapotPipeline = await device.createRenderPipelineAsync({
   },
 });
 
+// Reflected pass: model gets a reflection transform (winding flips), so disable culling
 const reflectedTeapotPipeline = await device.createRenderPipelineAsync({
   layout: device.createPipelineLayout({ bindGroupLayouts:[litLayout] }),
   vertex:{
@@ -410,7 +440,9 @@ const shadowPipeline = await device.createRenderPipelineAsync({
   depthStencil:{ format:'depth24plus', depthWriteEnabled:true, depthCompare:'less' },
 });
 
-
+// ------------------------
+// Uniform buffers + bind groups
+// ------------------------
 const groundUBO          = device.createBuffer({ size:320, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
 const teapotUBO          = device.createBuffer({ size:320, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
 const reflectedTeapotUBO = device.createBuffer({ size:320, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
@@ -453,7 +485,9 @@ const shadowTeapotBindGroup = device.createBindGroup({
   ]
 });
 
-
+// ------------------------
+// Camera + light
+// ------------------------
 const eye    = [0.0, 0.0, 1.0];
 const center = [0.0, 0.0, -3.0];
 const up     = [0,1,0];
@@ -476,7 +510,9 @@ function updateViewProj(){
 }
 updateViewProj();
 
-
+// ------------------------
+// UI state
+// ------------------------
 let bounceEnabled     = true;
 let lightOrbitEnabled = true;
 let debugShadowView   = false;
@@ -502,9 +538,20 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'o' || e.key === 'O') {
     useObliqueClip = !useObliqueClip;
     console.log('Oblique clipping:', useObliqueClip);
+    debugOnce = false;
   }
 });
 
+function updateButtons(){
+  btnBounce.textContent     = bounceEnabled     ? 'Disable bounce' : 'Enable bounce';
+  btnLight.textContent      = lightOrbitEnabled ? 'Disable light orbit' : 'Enable light orbit';
+  btnShadowView.textContent = debugShadowView   ? 'Show shaded scene' : 'Show depth map';
+}
+updateButtons();
+
+// ------------------------
+// Resizing + depth texture
+// ------------------------
 let depthTex = device.createTexture({
   size:{width:canvas.width,height:canvas.height},
   format: depthFormat,
@@ -528,6 +575,9 @@ function resizeIfNeeded(){
   }
 }
 
+// ------------------------
+// Animation
+// ------------------------
 function computeBounce(dt){
   if (bounceEnabled) bouncePhase += dt * 2.0;
   const minY = -1.8, maxY = 0.0;
@@ -535,20 +585,13 @@ function computeBounce(dt){
   return minY + (maxY - minY) * t;
 }
 
-function updateButtons(){
-  btnBounce.textContent     = bounceEnabled    ? 'Disable bounce' : 'Enable bounce';
-  btnLight.textContent      = lightOrbitEnabled ? 'Disable light orbit' : 'Enable light orbit';
-  btnShadowView.textContent = debugShadowView ? 'Show shaded scene' : 'Show depth map';
-}
-updateButtons();
-
-
 function frame(ts){
   resizeIfNeeded();
   if (!lastTime) lastTime = ts;
   const dt = (ts - lastTime) * 0.001;
   lastTime = ts;
 
+  // light motion
   if (lightOrbitEnabled) lightAngle += dt * 0.7;
   const lightCenter = [0, 2.5, -2];
   const lightRadius = 2.5;
@@ -560,19 +603,21 @@ function frame(ts){
   const lightViewProj = mat4Mul(lightProj, lookAt(lightPos, lightTarget, lightUp));
   const lightPosVec   = new Float32Array([...lightPos, 1]);
 
+  // teapot motion
   const bounceY = computeBounce(dt);
   const teapotModel = mat4Mul(T(0, bounceY, -3), scaleQuarter);
   const normalMatrix = mat4Transpose(mat4Inverse(teapotModel));
 
-  const reflectedEye = reflectPointY(eye);
-  const reflectedCenter = reflectPointY(center);
-  const reflectedUp = reflectDirY(up);
-  const viewReflected = lookAt(reflectedEye, reflectedCenter, reflectedUp);
+  // ------------------------
+  // REFLECTION PASS (Part 4) — correct orientation
+  // ------------------------
+  // Keep the SAME camera view (prevents left/right flip)
+  const viewReflected = view;
 
   let reflectedViewProj;
   let planeEye = null;
+
   if (useObliqueClip) {
-    // Move near plane onto the reflector to avoid drawing behind it.
     planeEye = planeInEyeSpace(viewReflected);
     const obliqueProj = modifyProjectionMatrix(planeEye, proj);
     reflectedViewProj = mat4Mul(obliqueProj, viewReflected);
@@ -580,16 +625,25 @@ function frame(ts){
     reflectedViewProj = mat4Mul(proj, viewReflected);
   }
 
-  const reflectedLight = reflectPointY(lightPos);
-  const reflectedLightVec = new Float32Array([...reflectedLight, 1]);
-  const reflectedEyeVec   = new Float32Array([...reflectedEye, 1]);
+  // Reflect the MODEL (mirrored teapot)
+  const reflectedModel = mat4Mul(reflectionMatrix, teapotModel);
+  const reflectedNormalMatrix = mat4Transpose(mat4Inverse(reflectedModel));
+
+  // Reflect the LIGHT for the reflected teapot
+  const reflectedLightVec = new Float32Array([...reflectPointY(lightPos), 1]);
+
   if (useObliqueClip && planeEye && !debugOnce) {
-    console.log('Oblique planeEye', Array.from(planeEye));
+    console.log('Oblique planeEye (a,b,c,d):', Array.from(planeEye));
     debugOnce = true;
   }
 
+  // Debug view in shader (same as earlier parts)
   shadowParams[2] = debugShadowView ? 1 : 0;
 
+  // ------------------------
+  // Upload UBOs
+  // ------------------------
+  // ground
   device.queue.writeBuffer(groundUBO, 0,   viewProj);
   device.queue.writeBuffer(groundUBO, 64,  groundModel);
   device.queue.writeBuffer(groundUBO, 128, groundNormalMatrix);
@@ -598,6 +652,7 @@ function frame(ts){
   device.queue.writeBuffer(groundUBO, 272, new Float32Array([...eye, 1]));
   device.queue.writeBuffer(groundUBO, 288, shadowParams);
 
+  // teapot (normal pass)
   device.queue.writeBuffer(teapotUBO, 0,   viewProj);
   device.queue.writeBuffer(teapotUBO, 64,  teapotModel);
   device.queue.writeBuffer(teapotUBO, 128, normalMatrix);
@@ -606,19 +661,25 @@ function frame(ts){
   device.queue.writeBuffer(teapotUBO, 272, new Float32Array([...eye, 1]));
   device.queue.writeBuffer(teapotUBO, 288, shadowParams);
 
+  // teapot (reflected pass) — use reflectedModel, reflectedNormalMatrix, reflected light, BUT same eye
   device.queue.writeBuffer(reflectedTeapotUBO, 0,   reflectedViewProj);
-  device.queue.writeBuffer(reflectedTeapotUBO, 64,  teapotModel);
-  device.queue.writeBuffer(reflectedTeapotUBO, 128, normalMatrix);
+  device.queue.writeBuffer(reflectedTeapotUBO, 64,  reflectedModel);
+  device.queue.writeBuffer(reflectedTeapotUBO, 128, reflectedNormalMatrix);
   device.queue.writeBuffer(reflectedTeapotUBO, 192, lightViewProj);
   device.queue.writeBuffer(reflectedTeapotUBO, 256, reflectedLightVec);
-  device.queue.writeBuffer(reflectedTeapotUBO, 272, reflectedEyeVec);
+  device.queue.writeBuffer(reflectedTeapotUBO, 272, new Float32Array([...eye, 1])); // IMPORTANT: not reflected
   device.queue.writeBuffer(reflectedTeapotUBO, 288, shadowParams);
 
+  // shadow pass (only needs lightVP + model)
   device.queue.writeBuffer(shadowTeapotUBO, 0,  lightViewProj);
   device.queue.writeBuffer(shadowTeapotUBO, 64, teapotModel);
 
+  // ------------------------
+  // Render passes
+  // ------------------------
   const encoder = device.createCommandEncoder();
 
+  // (A) Shadow map pass
   const shadowPass = encoder.beginRenderPass({
     colorAttachments:[{
       view: shadowMapRenderView,
@@ -642,6 +703,7 @@ function frame(ts){
 
   const colorView = ctx.getCurrentTexture().createView();
 
+  // (B) Pass 1: stencil ground, then draw reflected teapot (clipped)
   const pass1 = encoder.beginRenderPass({
     colorAttachments:[{
       view: colorView,
@@ -660,7 +722,7 @@ function frame(ts){
     }
   });
 
-  // Stencil pass: mark ground region, draw reflected teapot with oblique near-plane clipping.
+  // mark ground in stencil (no color writes)
   pass1.setPipeline(groundMaskPipeline);
   pass1.setBindGroup(0, groundBindGroup);
   pass1.setVertexBuffer(0, groundPosBuf);
@@ -669,6 +731,7 @@ function frame(ts){
   pass1.setStencilReference(1);
   pass1.draw(groundVertexCount);
 
+  // reflected teapot — only where stencil == 1
   pass1.setPipeline(reflectedTeapotPipeline);
   pass1.setBindGroup(0, reflectedTeapotBindGroup);
   pass1.setVertexBuffer(0, teapotPosBuf);
@@ -676,8 +739,10 @@ function frame(ts){
   pass1.setIndexBuffer(teapotIdxBuf, 'uint32');
   pass1.setStencilReference(1);
   pass1.drawIndexed(teapotInfo.indices.length);
+
   pass1.end();
 
+  // (C) Pass 2: draw ground (blended) + original teapot
   const pass2 = encoder.beginRenderPass({
     colorAttachments:[{
       view: colorView,
@@ -694,7 +759,7 @@ function frame(ts){
     }
   });
 
-  // Final scene pass: blended ground then original teapot.
+  // ground
   pass2.setPipeline(groundPipeline);
   pass2.setBindGroup(0, groundBindGroup);
   pass2.setVertexBuffer(0, groundPosBuf);
@@ -702,12 +767,14 @@ function frame(ts){
   pass2.setVertexBuffer(2, groundNormalBuf);
   pass2.draw(groundVertexCount);
 
+  // original teapot
   pass2.setPipeline(teapotPipeline);
   pass2.setBindGroup(0, teapotBindGroup);
   pass2.setVertexBuffer(0, teapotPosBuf);
   pass2.setVertexBuffer(1, teapotNrmBuf);
   pass2.setIndexBuffer(teapotIdxBuf, 'uint32');
   pass2.drawIndexed(teapotInfo.indices.length);
+
   pass2.end();
 
   device.queue.submit([encoder.finish()]);
