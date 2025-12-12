@@ -38,8 +38,9 @@ fn vsGround(@location(0) pos : vec3<f32>,
 fn sampleShadow(worldPos : vec3<f32>) -> f32 {
   let clip = uBO.lightViewProj * vec4<f32>(worldPos, 1.0);
   let ndc = clip.xyz / clip.w;
-  let depth = ndc.z * 0.5 + 0.5;
-  let uv = ndc.xy * 0.5 + vec2<f32>(0.5, 0.5);
+  // WebGPU NDC: x,y in [-1..1], z in [0..1]. Texture UV has y down, so flip y.
+  let depth = ndc.z;
+  let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
   if(depth < 0.0 || depth > 1.0) {
     return 1.0;
   }
@@ -125,7 +126,7 @@ fn vsShadow(@location(0) pos : vec4<f32>) -> ShadowVSOut {
   let clip = sUBO.lightViewProj * world;
   out.clip = clip;
   let ndcZ = clip.z / clip.w;
-  out.depth01 = ndcZ * 0.5 + 0.5;
+  out.depth01 = ndcZ;
   return out;
 }
 

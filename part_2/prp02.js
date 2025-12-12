@@ -186,7 +186,7 @@ const shadowDepthTexture = device.createTexture({
 });
 const shadowDepthView = shadowDepthTexture.createView();
 
-const shaderCode = await (await fetch('./prp02.wgsl?v=ref2')).text();
+const shaderCode = await (await fetch('./prp02.wgsl?v=shadowfix1')).text();
 const shaderModule = device.createShaderModule({ code: shaderCode });
 
 const litLayout = device.createBindGroupLayout({

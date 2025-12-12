@@ -291,7 +291,7 @@ const shadowDepthView = shadowDepthTexture.createView();
 // ------------------------
 // Pipelines
 // ------------------------
-const shaderCode = await (await fetch('./prp04.wgsl?v=ref4')).text();
+const shaderCode = await (await fetch('./prp04.wgsl?v=shadowfix1')).text();
 const shaderModule = device.createShaderModule({ code: shaderCode });
 
 const litLayout = device.createBindGroupLayout({
