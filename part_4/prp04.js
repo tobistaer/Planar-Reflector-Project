@@ -216,21 +216,30 @@ const groundNormalMatrix = I4();
 const reflectionMatrix = reflectionY(reflectionPlaneY);
 const reflectPointY = (p) => transformPoint(reflectionMatrix, p);
 
+// Significantly larger ground so reflections stay visible
+const groundWidth = 8;
+const groundDepth = 8;
+const groundNearZ = 0.0;
+const groundFarZ = groundNearZ - groundDepth;
+const halfGroundWidth = groundWidth * 0.5;
+
 const groundPos = new Float32Array([
-  -2,-1,-2,1,
-   2,-1,-2,1,
-  -2,-1,-6,1,
-  -2,-1,-6,1,
-   2,-1,-2,1,
-   2,-1,-6,1,
+  -halfGroundWidth, reflectionPlaneY, groundNearZ, 1,
+   halfGroundWidth, reflectionPlaneY, groundNearZ, 1,
+  -halfGroundWidth, reflectionPlaneY, groundFarZ, 1,
+  -halfGroundWidth, reflectionPlaneY, groundFarZ, 1,
+   halfGroundWidth, reflectionPlaneY, groundNearZ, 1,
+   halfGroundWidth, reflectionPlaneY, groundFarZ, 1,
 ]);
+const groundUVScaleX = groundWidth / 4;
+const groundUVScaleZ = groundDepth / 4;
 const groundUV = new Float32Array([
   0,0,
-  1,0,
-  0,1,
-  0,1,
-  1,0,
-  1,1,
+  groundUVScaleX,0,
+  0,groundUVScaleZ,
+  0,groundUVScaleZ,
+  groundUVScaleX,0,
+  groundUVScaleX,groundUVScaleZ,
 ]);
 const groundNormals = new Float32Array(new Array(6).fill(0).flatMap(()=>[0,1,0]));
 const groundVertexCount = groundPos.length / 4;
