@@ -9,7 +9,6 @@ const device  = await adapter.requestDevice();
 const ctx     = canvas.getContext('webgpu');
 const format  = navigator.gpu.getPreferredCanvasFormat();
 ctx.configure({ device, format, alphaMode: 'opaque' });
-// Adds transparency on the ground to blend the reflected teapot with the surface.
 const shadowMapSize = 1024;
 const shadowBias = 0.003;
 const reflectionPlaneY = -1.0;

@@ -25,7 +25,6 @@ struct GroundVSOut {
 fn vsGround(@location(0) pos : vec3<f32>,
             @location(1) uv  : vec2<f32>,
             @location(2) nrm : vec3<f32>) -> GroundVSOut {
-  // Ground is also drawn as a stencil mask; color writes can be discarded in that pass.
   var out : GroundVSOut;
   let world = uBO.model * vec4<f32>(pos, 1.0);
   out.clip = uBO.viewProj * world;
@@ -38,7 +37,6 @@ fn vsGround(@location(0) pos : vec3<f32>,
 fn sampleShadow(worldPos : vec3<f32>) -> f32 {
   let clip = uBO.lightViewProj * vec4<f32>(worldPos, 1.0);
   let ndc = clip.xyz / clip.w;
-  // WebGPU NDC: x,y in [-1..1], z in [0..1]. Texture UV has y down, so flip y.
   let depth = ndc.z;
   let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
   if(depth < 0.0 || depth > 1.0) {

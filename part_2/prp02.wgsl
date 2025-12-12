@@ -37,7 +37,6 @@ fn vsGround(@location(0) pos : vec3<f32>,
 fn sampleShadow(worldPos : vec3<f32>) -> f32 {
   let clip = uBO.lightViewProj * vec4<f32>(worldPos, 1.0);
   let ndc = clip.xyz / clip.w;
-  // WebGPU NDC: x,y in [-1..1], z in [0..1]. Texture UV has y down, so flip y.
   let depth = ndc.z;
   let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
   if(depth < 0.0 || depth > 1.0) {
@@ -57,7 +56,6 @@ fn fsGround(in : GroundVSOut) -> @location(0) vec4<f32> {
     return vec4<f32>(vec3<f32>(depthView), 1.0);
   }
 
-  // Ground uses fixed alpha; reflection is visible through this blended surface.
   let baseColor = textureSample(baseTex, baseSampler, in.uv).rgb;
   let lightDir = normalize(uBO.lightPosition.xyz - in.worldPos);
   let viewDir = normalize(uBO.eyePosition.xyz - in.worldPos);
