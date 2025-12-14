@@ -47,7 +47,6 @@ fn sampleShadow(worldPos : vec3<f32>) -> f32 {
     return 1.0;
   }
 
-  // Small PCF kernel to reduce shadow aliasing and tiny light leaks.
   let bias = uBO.shadowParams.x;
   let texel = vec2<f32>(uBO.shadowParams.y, uBO.shadowParams.y);
 
@@ -139,8 +138,6 @@ fn vsShadow(@location(0) pos : vec4<f32>) -> ShadowVSOut {
 
 @fragment
 fn fsShadow(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
-  // Use the rasterizer-computed depth (matches what ends up in the depth buffer),
-  // instead of interpolating clip.z/clip.w from the vertices.
   let depth01 = clamp(pos.z, 0.0, 1.0);
   return vec4<f32>(vec3<f32>(depth01), 1.0);
 }
