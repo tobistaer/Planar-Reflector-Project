@@ -12,7 +12,7 @@ ctx.configure({ device, format, alphaMode: 'opaque' });
 
 const depthFormat = 'depth24plus-stencil8';
 const shadowMapSize = 1024;
-const shadowBias = 0.003;
+const shadowBias = 0.001;
 const reflectionPlaneY = -1.0;
 
 // Part 4: clip submerged reflection using oblique near-plane clipping (reflector plane as the near plane).
@@ -264,7 +264,7 @@ const shadowDepthTexture = device.createTexture({
 });
 const shadowDepthView = shadowDepthTexture.createView();
 
-const shaderCode = await (await fetch('./prp04.wgsl?v=shadowfix1')).text();
+const shaderCode = await (await fetch('./prp04.wgsl?v=shadowfix2')).text();
 const shaderModule = device.createShaderModule({ code: shaderCode });
 
 const litLayout = device.createBindGroupLayout({
@@ -417,7 +417,7 @@ const shadowPipeline = await device.createRenderPipelineAsync({
     entryPoint:'fsShadow',
     targets:[{ format:'rgba32float' }],
   },
-  primitive:{ topology:'triangle-list', cullMode:'back' },
+  primitive:{ topology:'triangle-list', cullMode:'none' },
   depthStencil:{ format:'depth24plus', depthWriteEnabled:true, depthCompare:'less' },
 });
 

@@ -46,8 +46,20 @@ fn sampleShadow(worldPos : vec3<f32>) -> f32 {
   if(any(uv < vec2<f32>(0.0, 0.0)) || any(uv > vec2<f32>(1.0, 1.0))) {
     return 1.0;
   }
-  let stored = textureSampleLevel(shadowTex, shadowSampler, uv, 0.0).r;
-  return select(0.0, 1.0, depth - uBO.shadowParams.x <= stored);
+
+  // Small PCF kernel to reduce shadow aliasing and tiny light leaks.
+  let bias = uBO.shadowParams.x;
+  let texel = vec2<f32>(uBO.shadowParams.y, uBO.shadowParams.y);
+
+  var sum = 0.0;
+  for (var oy: i32 = -1; oy <= 1; oy = oy + 1) {
+    for (var ox: i32 = -1; ox <= 1; ox = ox + 1) {
+      let uvO = uv + vec2<f32>(f32(ox), f32(oy)) * texel;
+      let stored = textureSampleLevel(shadowTex, shadowSampler, uvO, 0.0).r;
+      sum = sum + select(0.0, 1.0, depth - bias <= stored);
+    }
+  }
+  return sum * (1.0 / 9.0);
 }
 
 @fragment
@@ -115,21 +127,20 @@ struct ShadowUniforms {
 
 struct ShadowVSOut {
   @builtin(position) clip : vec4<f32>,
-  @location(0) ndcZ : f32,
 };
 
 @vertex
 fn vsShadow(@location(0) pos : vec4<f32>) -> ShadowVSOut {
   var out : ShadowVSOut;
   let world = sUBO.model * pos;
-  let clip = sUBO.lightViewProj * world;
-  out.clip = clip;
-  out.ndcZ = clip.z / clip.w;
+  out.clip = sUBO.lightViewProj * world;
   return out;
 }
 
 @fragment
-fn fsShadow(in : ShadowVSOut) -> @location(0) vec4<f32> {
-  let depth01 = clamp(in.ndcZ, 0.0, 1.0);
+fn fsShadow(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
+  // Use the rasterizer-computed depth (matches what ends up in the depth buffer),
+  // instead of interpolating clip.z/clip.w from the vertices.
+  let depth01 = clamp(pos.z, 0.0, 1.0);
   return vec4<f32>(vec3<f32>(depth01), 1.0);
 }
