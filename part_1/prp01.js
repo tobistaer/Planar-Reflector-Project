@@ -136,7 +136,7 @@ const shadowDepthTexture = device.createTexture({
 });
 const shadowDepthView = shadowDepthTexture.createView();
 
-const shaderCode = await (await fetch('./prp01.wgsl?v=shadowfix2')).text();
+const shaderCode = await (await fetch('./prp01.wgsl?v=shadowfix3')).text();
 const shaderModule = device.createShaderModule({ code: shaderCode });
 
 // We keep a single "lit" bind group layout for ground + teapot shaders, even though Part 1
@@ -197,6 +197,27 @@ const shadowPipeline = await device.createRenderPipelineAsync({
   // small "light leak" rings where the shadow map has no occluder depth.
   primitive:{ topology:'triangle-list', cullMode:'none' },
   depthStencil:{ format:'depth24plus', depthWriteEnabled:true, depthCompare:'less' },
+});
+
+// Fullscreen debug pipeline to display the raw shadow texture (depth map) 1:1.
+const debugShadowLayout = device.createBindGroupLayout({
+  entries:[
+    { binding:0, visibility:GPUShaderStage.FRAGMENT, sampler:{ type:'non-filtering' } },
+    { binding:1, visibility:GPUShaderStage.FRAGMENT, texture:{ sampleType:'unfilterable-float' } },
+  ]
+});
+const debugShadowPipeline = await device.createRenderPipelineAsync({
+  layout: device.createPipelineLayout({ bindGroupLayouts:[emptyLayout, emptyLayout, debugShadowLayout] }),
+  vertex:{ module:shaderModule, entryPoint:'vsDebugShadow' },
+  fragment:{ module:shaderModule, entryPoint:'fsDebugShadow', targets:[{ format }] },
+  primitive:{ topology:'triangle-list', cullMode:'none' },
+});
+const debugShadowBindGroup = device.createBindGroup({
+  layout:debugShadowLayout,
+  entries:[
+    { binding:0, resource:shadowSampler },
+    { binding:1, resource:shadowMapSampleView },
+  ]
 });
 
 const groundUBO = device.createBuffer({ size:320, usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST });
@@ -323,7 +344,9 @@ function frame(ts){
   const reflectedLightVec = new Float32Array([...reflectedLight, 1]);
   const reflectedEyeVec = new Float32Array([...reflectedEye, 1]);
 
-  shadowParams[2] = debugShadowView ? 1 : 0;
+  // Note: we show the depth map via a dedicated fullscreen pipeline (see below),
+  // instead of sampling shadowTex with unrelated scene UVs.
+  shadowParams[2] = 0;
 
   device.queue.writeBuffer(groundUBO, 0, viewProj);
   device.queue.writeBuffer(groundUBO, 64, groundModel);
@@ -372,6 +395,26 @@ function frame(ts){
   shadowPass.setIndexBuffer(teapotIdxBuf, 'uint32');
   shadowPass.drawIndexed(teapotInfo.indices.length);
   shadowPass.end();
+
+  if (debugShadowView) {
+    const colorView = ctx.getCurrentTexture().createView();
+    const debugPass = encoder.beginRenderPass({
+      colorAttachments:[{
+        view: colorView,
+        loadOp:'clear',
+        storeOp:'store',
+        clearValue:{ r:0, g:0, b:0, a:1 },
+      }],
+    });
+    debugPass.setPipeline(debugShadowPipeline);
+    debugPass.setBindGroup(2, debugShadowBindGroup);
+    debugPass.draw(6);
+    debugPass.end();
+
+    device.queue.submit([encoder.finish()]);
+    requestAnimationFrame(frame);
+    return;
+  }
 
   const colorView = ctx.getCurrentTexture().createView();
   const pass = encoder.beginRenderPass({

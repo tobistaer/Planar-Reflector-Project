@@ -150,3 +150,48 @@ fn fsShadow(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
   let depth01 = clamp(pos.z, 0.0, 1.0);
   return vec4<f32>(vec3<f32>(depth01), 1.0);
 }
+
+// ----------------------------
+// Shadow map debug (fullscreen)
+// ----------------------------
+
+@group(2) @binding(0) var dbgShadowSampler : sampler;
+@group(2) @binding(1) var dbgShadowTex     : texture_2d<f32>;
+
+struct DebugVSOut {
+  @builtin(position) clip : vec4<f32>,
+  @location(0) uv         : vec2<f32>,
+};
+
+@vertex
+fn vsDebugShadow(@builtin(vertex_index) vi : u32) -> DebugVSOut {
+  // Two triangles covering the screen.
+  var pos = array<vec2<f32>, 6>(
+    vec2<f32>(-1.0, -1.0),
+    vec2<f32>( 1.0, -1.0),
+    vec2<f32>(-1.0,  1.0),
+    vec2<f32>(-1.0,  1.0),
+    vec2<f32>( 1.0, -1.0),
+    vec2<f32>( 1.0,  1.0),
+  );
+  // Texture coordinates: (0,0) is top-left in WebGPU, so flip Y relative to clip-space Y.
+  var uv = array<vec2<f32>, 6>(
+    vec2<f32>(0.0, 1.0),
+    vec2<f32>(1.0, 1.0),
+    vec2<f32>(0.0, 0.0),
+    vec2<f32>(0.0, 0.0),
+    vec2<f32>(1.0, 1.0),
+    vec2<f32>(1.0, 0.0),
+  );
+
+  var out : DebugVSOut;
+  out.clip = vec4<f32>(pos[vi], 0.0, 1.0);
+  out.uv = uv[vi];
+  return out;
+}
+
+@fragment
+fn fsDebugShadow(in : DebugVSOut) -> @location(0) vec4<f32> {
+  let d = textureSampleLevel(dbgShadowTex, dbgShadowSampler, in.uv, 0.0).r;
+  return vec4<f32>(vec3<f32>(d), 1.0);
+}
