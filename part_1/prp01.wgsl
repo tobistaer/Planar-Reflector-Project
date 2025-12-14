@@ -54,8 +54,22 @@ fn sampleShadow(worldPos : vec3<f32>) -> f32 {
     // Outside the shadow map => consider it lit.
     return 1.0;
   }
-  let stored = textureSampleLevel(shadowTex, shadowSampler, uv, 0.0).r;
-  return select(0.0, 1.0, depth - uBO.shadowParams.x <= stored);
+
+  // Small PCF kernel:
+  // We average multiple depth compares to soften aliasing and reduce tiny "light leak" gaps
+  // caused by undersampling at shadow edges.
+  let bias = uBO.shadowParams.x;
+  let texel = vec2<f32>(uBO.shadowParams.y, uBO.shadowParams.y);
+
+  var sum = 0.0;
+  for (var oy: i32 = -1; oy <= 1; oy = oy + 1) {
+    for (var ox: i32 = -1; ox <= 1; ox = ox + 1) {
+      let uvO = uv + vec2<f32>(f32(ox), f32(oy)) * texel;
+      let stored = textureSampleLevel(shadowTex, shadowSampler, uvO, 0.0).r;
+      sum = sum + select(0.0, 1.0, depth - bias <= stored);
+    }
+  }
+  return sum * (1.0 / 9.0);
 }
 
 @fragment
@@ -119,23 +133,20 @@ struct ShadowUniforms {
 
 struct ShadowVSOut {
   @builtin(position) clip : vec4<f32>,
-  @location(0) depth01 : f32,
 };
 
 @vertex
 fn vsShadow(@location(0) pos : vec4<f32>) -> ShadowVSOut {
   var out : ShadowVSOut;
   let world = sUBO.model * pos;
-  let clip = sUBO.lightViewProj * world;
-  out.clip = clip;
-  // NOTE: This uses interpolated clip.z/clip.w. For higher quality shadow maps, consider
-  // writing @builtin(position).z from the fragment stage (matches rasterized depth).
-  let ndcZ = clip.z / clip.w;
-  out.depth01 = ndcZ;
+  out.clip = sUBO.lightViewProj * world;
   return out;
 }
 
 @fragment
-fn fsShadow(in : ShadowVSOut) -> @location(0) vec4<f32> {
-  return vec4<f32>(vec3<f32>(clamp(in.depth01, 0.0, 1.0)), 1.0);
+fn fsShadow(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
+  // Store rasterizer depth (pos.z) so the value we compare against matches what the GPU actually
+  // wrote for the triangle, avoiding edge artifacts / "rings" from interpolation mismatches.
+  let depth01 = clamp(pos.z, 0.0, 1.0);
+  return vec4<f32>(vec3<f32>(depth01), 1.0);
 }

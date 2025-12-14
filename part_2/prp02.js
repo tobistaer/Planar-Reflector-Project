@@ -11,7 +11,7 @@ const format  = navigator.gpu.getPreferredCanvasFormat();
 ctx.configure({ device, format, alphaMode: 'opaque' });
 const shadowMapSize = 1024;
 // Bias is a pragmatic tradeoff: too low => acne, too high => light leaks.
-const shadowBias = 0.003;
+const shadowBias = 0.001;
 // Ground plane height. We reflect objects around this plane instead of reflecting the camera.
 const reflectionPlaneY = -1.0;
 
@@ -195,7 +195,7 @@ const shadowDepthTexture = device.createTexture({
 const shadowDepthView = shadowDepthTexture.createView();
 
 // Cache-bust the shader URL so edits are picked up without relying on a hard refresh.
-const shaderCode = await (await fetch('./prp02.wgsl?v=shadowfix1')).text();
+const shaderCode = await (await fetch('./prp02.wgsl?v=shadowfix2')).text();
 const shaderModule = device.createShaderModule({ code: shaderCode });
 
 const litLayout = device.createBindGroupLayout({
@@ -299,7 +299,9 @@ const shadowPipeline = await device.createRenderPipelineAsync({
     entryPoint:'fsShadow',
     targets:[{ format:'rgba32float' }],
   },
-  primitive:{ topology:'triangle-list', cullMode:'back' },
+  // Disable backface culling in the shadow pass: missing backfaces at silhouettes can create
+  // small "light leak" rings where the shadow map has no occluder depth.
+  primitive:{ topology:'triangle-list', cullMode:'none' },
   depthStencil:{ format:'depth24plus', depthWriteEnabled:true, depthCompare:'less' },
 });
 
