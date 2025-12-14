@@ -193,5 +193,8 @@ fn vsDebugShadow(@builtin(vertex_index) vi : u32) -> DebugVSOut {
 @fragment
 fn fsDebugShadow(in : DebugVSOut) -> @location(0) vec4<f32> {
   let d = textureSampleLevel(dbgShadowTex, dbgShadowSampler, in.uv, 0.0).r;
-  return vec4<f32>(vec3<f32>(d), 1.0);
+  // Improve visibility: most of the shadow map is close to 1.0 (far plane).
+  // Invert and apply a gamma curve so the silhouette becomes easier to see in screenshots.
+  let v = pow(max(1.0 - d, 0.0), 0.25);
+  return vec4<f32>(vec3<f32>(v), 1.0);
 }

@@ -136,7 +136,7 @@ const shadowDepthTexture = device.createTexture({
 });
 const shadowDepthView = shadowDepthTexture.createView();
 
-const shaderCode = await (await fetch('./prp01.wgsl?v=shadowfix3')).text();
+const shaderCode = await (await fetch('./prp01.wgsl?v=shadowfix4')).text();
 const shaderModule = device.createShaderModule({ code: shaderCode });
 
 // We keep a single "lit" bind group layout for ground + teapot shaders, even though Part 1

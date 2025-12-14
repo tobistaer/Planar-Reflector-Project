@@ -200,7 +200,7 @@ const shadowDepthView = shadowDepthTexture.createView();
 
 
 // Cache-bust the shader URL so edits are picked up without relying on a hard refresh.
-const shaderCode = await (await fetch('./prp03.wgsl?v=shadowfix3')).text();
+const shaderCode = await (await fetch('./prp03.wgsl?v=shadowfix4')).text();
 const shaderModule = device.createShaderModule({ code: shaderCode });
 
 const litLayout = device.createBindGroupLayout({
