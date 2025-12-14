@@ -10,9 +10,12 @@ const ctx     = canvas.getContext('webgpu');
 const format  = navigator.gpu.getPreferredCanvasFormat();
 ctx.configure({ device, format, alphaMode: 'opaque' });
 
+// We need a stencil buffer to mask reflection to the ground quad.
 const depthFormat = 'depth24plus-stencil8';
 const shadowMapSize = 1024;
+// Bias is a pragmatic tradeoff: too low => acne, too high => light leaks.
 const shadowBias = 0.001;
+// Ground plane height. We reflect objects around this plane instead of reflecting the camera.
 const reflectionPlaneY = -1.0;
 
 // Part 4: clip submerged reflection using oblique near-plane clipping (reflector plane as the near plane).
@@ -34,6 +37,8 @@ function S(x,y,z){ const m=I4(); m[0]=x; m[5]=y; m[10]=z; return m; }
 
 function reflectionY(yPlane){
   const m = I4();
+  // Mirror in Y flips handedness (and therefore triangle winding).
+  // We'll compensate by switching the pipeline frontFace for the reflected teapot.
   m[5]  = -1;
   m[13] = 2*yPlane;
   return m;
@@ -233,6 +238,7 @@ const sampler = device.createSampler({
   magFilter:'linear',
   minFilter:'linear'
 });
+// Shadow maps should not blur across texels during compare; clamp avoids sampling outside the map.
 const shadowSampler = device.createSampler({
   addressModeU:'clamp-to-edge',
   addressModeV:'clamp-to-edge',
@@ -249,6 +255,8 @@ const teapotPosBuf = makeBuffer(teapotInfo.vertices, GPUBufferUsage.VERTEX|GPUBu
 const teapotNrmBuf = makeBuffer(teapotInfo.normals,  GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST);
 const teapotIdxBuf = makeBuffer(teapotInfo.indices,  GPUBufferUsage.INDEX |GPUBufferUsage.COPY_DST);
 
+// Store shadow depth in a color texture so we can sample it with a regular sampler and also show it
+// on-screen for debugging. (Depth textures require different types/samplers.)
 const shadowMapTexture = device.createTexture({
   size:{ width:shadowMapSize, height:shadowMapSize },
   format:'rgba32float',
@@ -264,6 +272,7 @@ const shadowDepthTexture = device.createTexture({
 });
 const shadowDepthView = shadowDepthTexture.createView();
 
+// Cache-bust the shader URL so edits are picked up without relying on a hard refresh.
 const shaderCode = await (await fetch('./prp04.wgsl?v=shadowfix2')).text();
 const shaderModule = device.createShaderModule({ code: shaderCode });
 
@@ -417,6 +426,8 @@ const shadowPipeline = await device.createRenderPipelineAsync({
     entryPoint:'fsShadow',
     targets:[{ format:'rgba32float' }],
   },
+  // Disable backface culling in the shadow pass: missing backfaces at silhouettes can create
+  // small "light leak" rings where the shadow map has no occluder depth.
   primitive:{ topology:'triangle-list', cullMode:'none' },
   depthStencil:{ format:'depth24plus', depthWriteEnabled:true, depthCompare:'less' },
 });
@@ -471,6 +482,7 @@ const lightTarget = [0, -0.6, -3.0];
 const lightUp     = [0,1,0];
 const lightProj   = perspectiveFovY(60 * Math.PI/180, 1.0, 0.2, 20.0);
 
+// shadowParams = [bias, 1/size, debugDepthViewFlag, unused]
 const shadowParams = new Float32Array([shadowBias, 1/shadowMapSize, 0, 0]);
 
 let proj = perspectiveFovY(65 * Math.PI/180, canvas.width/canvas.height, 0.1, 100.0);
@@ -565,7 +577,10 @@ function frame(ts){
 
   const viewReflected = view;
 
-  // Compute reflector plane in eye space and modify the projection so the near plane matches it.
+  // Why oblique near-plane clipping:
+  // The reflected teapot is still a full 3D object, but we only want the part "above" the reflector
+  // plane to be visible in the reflection. Making the reflector plane the near plane clips away the
+  // submerged part without needing extra geometry or per-fragment tests.
   const planeEye = planeInEyeSpace(viewReflected);
   const obliqueProj = modifyProjectionMatrix(planeEye, proj);
   const reflectedViewProj = mat4Mul(obliqueProj, viewReflected);
@@ -648,6 +663,7 @@ function frame(ts){
     }
   });
 
+  // Pass 1: build a stencil mask from the ground, then draw the reflection clipped to that mask.
   pass1.setPipeline(groundMaskPipeline);
   pass1.setBindGroup(0, groundBindGroup);
   pass1.setVertexBuffer(0, groundPosBuf);
@@ -666,7 +682,10 @@ function frame(ts){
 
   pass1.end();
 
-  // Clear depth before drawing the normal (non-oblique) scene pass.
+  // Why a second pass + depth clear:
+  // Pass 1 used an oblique projection for the reflection and wrote depth with that projection.
+  // If we continued in the same depth buffer, the main scene (normal projection) would depth-test
+  // against incompatible values. So we keep color, but clear depth and draw the normal scene in pass 2.
   const pass2 = encoder.beginRenderPass({
     colorAttachments:[{
       view: colorView,

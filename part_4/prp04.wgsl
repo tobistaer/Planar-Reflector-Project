@@ -1,3 +1,4 @@
+// Part 4 shader: adds a small PCF filter for shadows and a shadow-map pass that stores raster depth.
 struct ObjectUniforms {
   viewProj      : mat4x4<f32>,
   model         : mat4x4<f32>,
@@ -5,6 +6,9 @@ struct ObjectUniforms {
   lightViewProj : mat4x4<f32>,
   lightPosition : vec4<f32>,
   eyePosition   : vec4<f32>,
+  // shadowParams.x = depth bias (fight acne)
+  // shadowParams.y = 1 / shadowMapSize (texel size)
+  // shadowParams.z = debug flag (show depth map)
   shadowParams  : vec4<f32>,
 };
 
@@ -47,6 +51,9 @@ fn sampleShadow(worldPos : vec3<f32>) -> f32 {
     return 1.0;
   }
 
+  // Small PCF kernel:
+  // We average multiple depth compares to soften aliasing and reduce tiny "light leak" gaps
+  // caused by undersampling at shadow edges.
   let bias = uBO.shadowParams.x;
   let texel = vec2<f32>(uBO.shadowParams.y, uBO.shadowParams.y);
 
@@ -64,6 +71,7 @@ fn sampleShadow(worldPos : vec3<f32>) -> f32 {
 @fragment
 fn fsGround(in : GroundVSOut) -> @location(0) vec4<f32> {
   if(uBO.shadowParams.z > 0.5) {
+    // Debug view: show stored shadow-map depth as grayscale.
     let depthView = textureSampleLevel(shadowTex, shadowSampler, in.uv, 0.0).r;
     return vec4<f32>(vec3<f32>(depthView), 1.0);
   }
@@ -80,6 +88,7 @@ fn fsGround(in : GroundVSOut) -> @location(0) vec4<f32> {
   let color = baseColor * (ambient + shadow * 0.7 * diff) +
               vec3<f32>(shadow * 0.15 * spec);
 
+  // Alpha < 1 lets the reflection "show through" once the ground is blended in JS.
   let alpha = 0.6;
   return vec4<f32>(color, alpha);
 }
@@ -138,6 +147,9 @@ fn vsShadow(@location(0) pos : vec4<f32>) -> ShadowVSOut {
 
 @fragment
 fn fsShadow(@builtin(position) pos : vec4<f32>) -> @location(0) vec4<f32> {
+  // Why pos.z:
+  // Use the rasterizer-computed depth (matches what ends up in the depth buffer) instead of
+  // interpolating clip.z/clip.w from the vertices, which can introduce edge artifacts.
   let depth01 = clamp(pos.z, 0.0, 1.0);
   return vec4<f32>(vec3<f32>(depth01), 1.0);
 }

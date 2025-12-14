@@ -1,3 +1,4 @@
+// Shared shader for teapot + ground, including a simple shadow-map lookup.
 struct ObjectUniforms {
   viewProj      : mat4x4<f32>,
   model         : mat4x4<f32>,
@@ -5,6 +6,9 @@ struct ObjectUniforms {
   lightViewProj : mat4x4<f32>,
   lightPosition : vec4<f32>,
   eyePosition   : vec4<f32>,
+  // shadowParams.x = depth bias (fight acne)
+  // shadowParams.y = 1 / shadowMapSize (texel size)
+  // shadowParams.z = debug flag (show depth map)
   shadowParams  : vec4<f32>,
 };
 
@@ -41,9 +45,11 @@ fn sampleShadow(worldPos : vec3<f32>) -> f32 {
   let depth = ndc.z;
   let uv = vec2<f32>(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
   if(depth < 0.0 || depth > 1.0) {
+    // Outside the light frustum => consider it lit.
     return 1.0;
   }
   if(any(uv < vec2<f32>(0.0, 0.0)) || any(uv > vec2<f32>(1.0, 1.0))) {
+    // Outside the shadow map => consider it lit.
     return 1.0;
   }
   let stored = textureSampleLevel(shadowTex, shadowSampler, uv, 0.0).r;
@@ -53,6 +59,7 @@ fn sampleShadow(worldPos : vec3<f32>) -> f32 {
 @fragment
 fn fsGround(in : GroundVSOut) -> @location(0) vec4<f32> {
   if(uBO.shadowParams.z > 0.5) {
+    // Debug view: show stored shadow-map depth as grayscale.
     let depthView = textureSampleLevel(shadowTex, shadowSampler, in.uv, 0.0).r;
     return vec4<f32>(vec3<f32>(depthView), 1.0);
   }
@@ -69,6 +76,7 @@ fn fsGround(in : GroundVSOut) -> @location(0) vec4<f32> {
   let color = baseColor * (ambient + shadow * 0.7 * diff) +
               vec3<f32>(shadow * 0.15 * spec);
 
+  // Alpha < 1 lets the reflection "show through" once the ground is blended in JS.
   let alpha = 0.6;
   return vec4<f32>(color, alpha);
 }
@@ -124,6 +132,8 @@ fn vsShadow(@location(0) pos : vec4<f32>) -> ShadowVSOut {
   let world = sUBO.model * pos;
   let clip = sUBO.lightViewProj * world;
   out.clip = clip;
+  // NOTE: This uses interpolated clip.z/clip.w. For higher quality shadow maps, consider
+  // writing @builtin(position).z from the fragment stage (matches rasterized depth).
   let ndcZ = clip.z / clip.w;
   out.depth01 = ndcZ;
   return out;

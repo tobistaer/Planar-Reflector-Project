@@ -12,7 +12,9 @@ ctx.configure({ device, format, alphaMode: 'opaque' });
 
 const depthFormat = 'depth24plus-stencil8';
 const shadowMapSize = 1024;
+// Bias is a pragmatic tradeoff: too low => acne, too high => light leaks.
 const shadowBias = 0.003;
+// Ground plane height. We reflect objects around this plane instead of reflecting the camera.
 const reflectionPlaneY = -1.0;
 
 // Part 3: use stencil to clip the reflection to the ground quad.
@@ -29,6 +31,8 @@ function T(x,y,z){ const m=I4(); m[12]=x; m[13]=y; m[14]=z; return m; }
 function S(x,y,z){ const m=I4(); m[0]=x; m[5]=y; m[10]=z; return m; }
 function reflectionY(yPlane){
   const m = I4();
+  // Mirror in Y flips handedness (and therefore triangle winding).
+  // We'll compensate by switching the pipeline frontFace for the reflected teapot.
   m[5] = -1;
   m[13] = 2*yPlane;
   return m;
@@ -159,6 +163,7 @@ const sampler = device.createSampler({
   magFilter:'linear',
   minFilter:'linear'
 });
+// Shadow maps should not blur across texels during compare; clamp avoids sampling outside the map.
 const shadowSampler = device.createSampler({
   addressModeU:'clamp-to-edge',
   addressModeV:'clamp-to-edge',
@@ -176,6 +181,8 @@ const teapotNrmBuf = makeBuffer(teapotInfo.normals,  GPUBufferUsage.VERTEX|GPUBu
 const teapotIdxBuf = makeBuffer(teapotInfo.indices,  GPUBufferUsage.INDEX |GPUBufferUsage.COPY_DST);
 
 
+// Store shadow depth in a color texture so we can sample it with a regular sampler and also show it
+// on-screen for debugging. (Depth textures require different types/samplers.)
 const shadowMapTexture = device.createTexture({
   size:{ width:shadowMapSize, height:shadowMapSize },
   format:'rgba32float',
@@ -192,6 +199,7 @@ const shadowDepthTexture = device.createTexture({
 const shadowDepthView = shadowDepthTexture.createView();
 
 
+// Cache-bust the shader URL so edits are picked up without relying on a hard refresh.
 const shaderCode = await (await fetch('./prp03.wgsl?v=shadowfix1')).text();
 const shaderModule = device.createShaderModule({ code: shaderCode });
 
@@ -205,6 +213,8 @@ const litLayout = device.createBindGroupLayout({
   ]
 });
 
+// We use the stencil buffer as a "mask" that marks where the reflector quad exists in screen space.
+// That lets us clip the reflected teapot to exactly the ground region, without needing geometry cuts.
 const stencilReplace = { compare:'always', failOp:'replace', depthFailOp:'replace', passOp:'replace' };
 const stencilKeep =    { compare:'always', failOp:'keep',    depthFailOp:'keep',    passOp:'keep' };
 const stencilEqual =   { compare:'equal',  failOp:'keep',    depthFailOp:'keep',    passOp:'keep' };
@@ -223,11 +233,13 @@ const groundMaskPipeline = await device.createRenderPipelineAsync({
   fragment:{
     module:shaderModule,
     entryPoint:'fsGround',
+    // We don't actually want to draw the ground yet; this pass only writes stencil.
     targets:[{ format, writeMask: 0 }],
   },
   primitive:{ topology:'triangle-list', cullMode:'back' },
   depthStencil:{
     format: depthFormat,
+    // Stencil writes should not depend on depth here; we just want a clean 2D mask.
     depthWriteEnabled:false,
     depthCompare:'always',
     stencilFront: stencilReplace,
@@ -313,11 +325,13 @@ const reflectedTeapotPipeline = await device.createRenderPipelineAsync({
     entryPoint:'fsTeapot',
     targets:[{ format }],
   },
+  // Why 'cw': mirroring flips winding, so without this we'd cull the reflected teapot away.
   primitive:{ topology:'triangle-list', cullMode:'back', frontFace:'cw' },
   depthStencil:{
     format: depthFormat,
     depthWriteEnabled:true,
     depthCompare:'less',
+    // Only draw reflection where the groundMaskPipeline wrote stencil == 1.
     stencilFront: stencilEqual,
     stencilBack:  stencilEqual,
     stencilReadMask:0xff,
@@ -401,6 +415,7 @@ const lightTarget = [0, -0.6, -3.0];
 const lightUp     = [0,1,0];
 const lightProj   = perspectiveFovY(60 * Math.PI/180, 1.0, 0.2, 20.0);
 
+// shadowParams = [bias, 1/size, debugDepthViewFlag, unused]
 const shadowParams = new Float32Array([shadowBias, 1/shadowMapSize, 0, 0]);
 
 let viewProj = I4();
@@ -571,7 +586,9 @@ function frame(ts){
     }
   });
 
-  // 1) Write stencil where the ground is, 2) draw reflected teapot where stencil==1.
+  // Why stencil first:
+  // We want the reflection to appear *only* on the ground quad. Stencil gives a cheap per-pixel mask,
+  // so we can render the full reflected object but only keep fragments that land on the reflector.
   pass.setPipeline(groundMaskPipeline);
   pass.setBindGroup(0, groundBindGroup);
   pass.setVertexBuffer(0, groundPosBuf);
