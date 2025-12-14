@@ -521,6 +521,7 @@ updateViewProj();
 let bounceEnabled     = true;
 let lightOrbitEnabled = true;
 let debugShadowView   = false;
+let obliqueClipEnabled = true;
 let bouncePhase       = 0;
 let lightAngle        = 0;
 let lastTime          = 0;
@@ -536,6 +537,16 @@ btnLight.addEventListener('click', () => {
 btnShadowView.addEventListener('click', () => {
   debugShadowView = !debugShadowView;
   btnShadowView.textContent = debugShadowView ? 'Show shaded scene' : 'Show depth map';
+});
+
+// Toggle oblique near-plane clipping (Part 4) to compare with/without submerged-reflection removal.
+// Press 'O' while the canvas has focus (or anywhere on the page).
+window.addEventListener('keydown', (e) => {
+  if (e.repeat) return;
+  if (e.key === 'o' || e.key === 'O') {
+    obliqueClipEnabled = !obliqueClipEnabled;
+    console.log(`Oblique clipping: ${obliqueClipEnabled ? 'ON' : 'OFF'}`);
+  }
 });
 
 function updateButtons(){
@@ -602,9 +613,16 @@ function frame(ts){
   // The reflected teapot is still a full 3D object, but we only want the part "above" the reflector
   // plane to be visible in the reflection. Making the reflector plane the near plane clips away the
   // submerged part without needing extra geometry or per-fragment tests.
-  const planeEye = planeInEyeSpace(viewReflected);
-  const obliqueProj = modifyProjectionMatrix(planeEye, proj);
-  const reflectedViewProj = mat4Mul(obliqueProj, viewReflected);
+  //
+  // This can be toggled with the 'O' key for comparison screenshots.
+  let reflectedViewProj = viewProj;
+  if (obliqueClipEnabled) {
+    const planeEye = planeInEyeSpace(viewReflected);
+    const obliqueProj = modifyProjectionMatrix(planeEye, proj);
+    reflectedViewProj = mat4Mul(obliqueProj, viewReflected);
+  } else {
+    reflectedViewProj = mat4Mul(proj, viewReflected);
+  }
 
   const reflectedModel = mat4Mul(reflectionMatrix, teapotModel);
   const reflectedNormalMatrix = mat4Transpose(mat4Inverse(reflectedModel));
